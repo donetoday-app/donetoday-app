@@ -1,0 +1,179 @@
+name: Done Today App Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build_android:
+    name: Build Android
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          
+      - name: Install dependencies
+        run: flutter pub get
+        
+      - name: Build APK
+        run: |
+          flutter build apk --release \
+            --dart-define=GITHUB_REPO=${{ secrets.GITHUB_REPO }}
+        
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: donetoday-android
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+  build_linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Install GTK Dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ninja-build libgtk-3-dev
+          
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          
+      - name: Enable Linux Desktop
+        run: flutter config --enable-linux-desktop
+        
+      - name: Install dependencies
+        run: flutter pub get
+        
+      - name: Build Linux App
+        run: |
+          flutter build linux --release \
+            --dart-define=GITHUB_REPO=${{ secrets.GITHUB_REPO }}
+        
+      - name: Archive Release
+        run: |
+          cd build/linux/x64/release/bundle
+          tar -czvf donetoday-linux.tar.gz *
+          
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: donetoday-linux
+          path: build/linux/x64/release/bundle/donetoday-linux.tar.gz
+
+  build_windows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          
+      - name: Enable Windows Desktop
+        run: flutter config --enable-windows-desktop
+        
+      - name: Install dependencies
+        run: flutter pub get
+        
+      - name: Build Windows App
+        run: |
+          flutter build windows --release `
+            --dart-define=GITHUB_REPO=${{ secrets.GITHUB_REPO }}
+        
+      - name: Archive Release
+        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath donetoday-windows.zip
+        
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: donetoday-windows
+          path: donetoday-windows.zip
+
+  build_snap:
+    name: Build & Publish Snap
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Sync Version
+        run: |
+          VERSION=$(grep -E '^version: ' pubspec.yaml | cut -d ' ' -f 2 | tr -d '\r' | tr -d '"' | tr -d "'")
+          sed -i "s/version: '.*'/version: '$VERSION'/g" snap/snapcraft.yaml
+          
+      - name: Build Snap
+        uses: snapcore/action-build@v1
+        id: snapbuild
+        
+      - name: Publish Snap
+        uses: snapcore/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          store_login: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+          snap: ${{ steps.snapbuild.outputs.snap }}
+          release: stable
+          
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: donetoday-snap
+          path: ${{ steps.snapbuild.outputs.snap }}
+
+  release:
+    name: Create GitHub Release
+    needs: [build_android, build_linux, build_windows, build_snap]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Get version from pubspec
+        id: get_version
+        run: |
+          VERSION=$(grep -E '^version: ' pubspec.yaml | cut -d ' ' -f 2 | tr -d '\r' | tr -d '"' | tr -d "'")
+          echo "version=v$VERSION" >> $GITHUB_OUTPUT
+          
+      - name: Download all workflow run artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          
+      - name: Display structure of downloaded files
+        run: ls -R artifacts
+      
+      - name: Prepare assets
+        run: |
+          mkdir -p release_assets
+          cp artifacts/donetoday-android/app-release.apk release_assets/donetoday.apk
+          cp artifacts/donetoday-linux/donetoday-linux.tar.gz release_assets/donetoday-linux.tar.gz
+          cp artifacts/donetoday-windows/donetoday-windows.zip release_assets/donetoday-windows.zip
+          cp artifacts/donetoday-snap/*.snap release_assets/done-today.snap
+          
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: ${{ secrets.GITHUB_REPO }} # Target the public repo
+          tag_name: ${{ steps.get_version.outputs.version }}
+          name: Release ${{ steps.get_version.outputs.version }}
+          files: release_assets/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+        env:
+          # This must be a Personal Access Token (PAT) with write access to the target public repo
+          GITHUB_TOKEN: ${{ secrets.OTA_GITHUB_TOKEN }}

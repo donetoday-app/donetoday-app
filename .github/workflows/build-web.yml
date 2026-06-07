@@ -1,0 +1,62 @@
+name: Build Flutter Web
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout code
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Install Flutter
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.6'
+          cache: true
+
+      # 3. Install dependencies
+      - name: Get dependencies
+        run: flutter pub get
+
+      # 4. Build web with env variables
+      - name: Build Web
+        run: |
+          flutter build web \
+            --release \
+            --base-href=/web/ \
+            --dart-define=GITHUB_REPO=${{ secrets.GITHUB_REPO }}
+
+      # 5. Upload build artifact
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-web-build
+          path: build/web
+
+      # 6. Push build to web-app repo
+      - name: Push build to web-app repo
+        run: |
+          set -e
+
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+
+          # Clone target repo
+          git clone https://x-access-token:${{ secrets.DT_LANDING_REPO_TOKEN }}@github.com/aj-seven/donetoday-website.git web-app
+
+          # Clean existing build
+          rm -rf web-app/public/web
+
+          # Copy new build
+          cp -r build/web web-app/public/web
+
+          cd web-app
+
+          git add .
+          git commit -m "Update Flutter web build" || echo "No changes to commit"
+          git push origin HEAD:master
