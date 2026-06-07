@@ -104,40 +104,40 @@ jobs:
           name: donetoday-windows
           path: donetoday-windows.zip
 
-  build_snap:
-    name: Build & Publish Snap
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        
-      - name: Sync Version
-        run: |
-          VERSION=$(grep -E '^version: ' pubspec.yaml | cut -d ' ' -f 2 | tr -d '\r' | tr -d '"' | tr -d "'")
-          sed -i "s/version: '.*'/version: '$VERSION'/g" snap/snapcraft.yaml
-          
-      - name: Build Snap
-        uses: snapcore/action-build@v1
-        id: snapbuild
-        
-      - name: Publish Snap
-        uses: snapcore/action-publish@v1
-        env:
-          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
-        with:
-          store_login: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
-          snap: ${{ steps.snapbuild.outputs.snap }}
-          release: stable
-          
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: donetoday-snap
-          path: ${{ steps.snapbuild.outputs.snap }}
+#  build_snap:
+#    name: Build & Publish Snap
+#    runs-on: ubuntu-latest
+#    steps:
+#      - name: Checkout code
+#        uses: actions/checkout@v4
+#        
+#      - name: Sync Version
+#        run: |
+#          VERSION=$(grep -E '^version: ' pubspec.yaml | cut -d ' ' -f 2 | tr -d '\r' | tr -d '"' | tr -d "'")
+#          sed -i "s/version: '.*'/version: '$VERSION'/g" snap/snapcraft.yaml
+#          
+#      - name: Build Snap
+#        uses: snapcore/action-build@v1
+#        id: snapbuild
+#        
+#      - name: Publish Snap
+#        uses: snapcore/action-publish@v1
+#        env:
+#          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+#        with:
+#          store_login: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+#          snap: ${{ steps.snapbuild.outputs.snap }}
+#          release: stable
+#          
+#      - name: Upload Artifact
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: donetoday-snap
+#          path: ${{ steps.snapbuild.outputs.snap }}
 
   release:
     name: Create GitHub Release
-    needs: [build_android, build_linux, build_windows, build_snap]
+    needs: [build_android, build_linux, build_windows]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -163,7 +163,7 @@ jobs:
           cp artifacts/donetoday-android/app-release.apk release_assets/donetoday.apk
           cp artifacts/donetoday-linux/donetoday-linux.tar.gz release_assets/donetoday-linux.tar.gz
           cp artifacts/donetoday-windows/donetoday-windows.zip release_assets/donetoday-windows.zip
-          cp artifacts/donetoday-snap/*.snap release_assets/done-today.snap
+          # cp artifacts/donetoday-snap/*.snap release_assets/done-today.snap
           
       - name: Create Release
         uses: softprops/action-gh-release@v2
